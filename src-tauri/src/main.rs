@@ -54,11 +54,15 @@ struct CompressionResult {
     target_met: bool,
 }
 
-fn ghostscript_path() -> Result<&'static str, String> {
-    ["/opt/homebrew/bin/gs", "/usr/local/bin/gs", "gs"]
-        .into_iter()
-        .find(|path| *path == "gs" || PathBuf::from(path).exists())
-        .ok_or("PDF compression requires Ghostscript. Install it with `brew install ghostscript`, then reopen KiloFile.".into())
+fn ghostscript_path() -> Result<PathBuf, String> {
+    let private_copy = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .map(|home| home.join("Library/Application Support/KiloFile/ghostscript/bin/gs"));
+    private_copy.into_iter()
+        .chain([PathBuf::from("/opt/homebrew/bin/gs"), PathBuf::from("/usr/local/bin/gs")])
+        .find(|path| path.exists())
+        .or_else(|| Command::new("gs").arg("--version").output().ok().map(|_| PathBuf::from("gs")))
+        .ok_or("PDF compression requires Ghostscript. Reinstall KiloFile's local PDF tools, then reopen KiloFile.".into())
 }
 
 fn run_ghostscript(input: &PathBuf, output: &PathBuf, dpi: u32) -> Result<(), String> {
