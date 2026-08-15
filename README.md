@@ -30,4 +30,12 @@ npm run build
 
 ## Compression scope
 
-This app consolidates and serializes PDF objects into compressed object streams. That is safe for interactive PDFs, but already optimized or image-heavy PDFs may not become smaller. In that case, the original bytes are returned instead of a larger file.
+PDF compression uses a local Ghostscript installation to reduce embedded image sizes while retaining PDF annotations such as links.
+
+## macOS downloads
+
+Create a drag-and-drop installer disk image with `npm run app:dmg`. The result is `standalone/KiloFile.dmg`.
+
+Create a package installer with `npm run app:pkg`. The result is `standalone/KiloFile.pkg` and installs KiloFile in `/Applications`.
+
+These builds are ad-hoc signed for local use. To distribute without Gatekeeper warnings, sign with an Apple Developer ID Application certificate and notarize the DMG or PKG with Apple.
