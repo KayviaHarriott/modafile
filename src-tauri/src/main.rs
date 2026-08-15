@@ -34,6 +34,43 @@ fn read_file(path: String) -> Result<String, String> {
         .map_err(|error| error.to_string())
 }
 
+fn next_compressed_path(input: &PathBuf, folder: &PathBuf) -> PathBuf {
+    let stem = input.file_stem().and_then(|name| name.to_str()).unwrap_or("document");
+    let first = folder.join(format!("{}-compressed.pdf", stem));
+    if !first.exists() { return first; }
+    let mut index = 1;
+    loop {
+        let candidate = folder.join(format!("{}-compressed-{}.pdf", stem, index));
+        if !candidate.exists() { return candidate; }
+        index += 1;
+    }
+}
+
+#[tauri::command]
+fn compress_pdf(input_path: String, folder: String, preset: String) -> Result<String, String> {
+    let input = PathBuf::from(input_path);
+    let output = next_compressed_path(&input, &PathBuf::from(folder));
+    let ghostscript = ["/opt/homebrew/bin/gs", "/usr/local/bin/gs", "gs"]
+        .into_iter()
+        .find(|path| *path == "gs" || PathBuf::from(path).exists())
+        .ok_or("PDF compression requires Ghostscript. Install it with `brew install ghostscript`, then reopen KiloFile.")?;
+    let profile = if preset == "screen" { "/screen" } else { "/ebook" };
+    let result = Command::new(ghostscript)
+        .args([
+            "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.6", "-dNOPAUSE", "-dBATCH", "-dQUIET",
+            "-dDetectDuplicateImages=true", "-dCompressFonts=true", "-dPreserveAnnots=true",
+            &format!("-dPDFSETTINGS={profile}"),
+        ])
+        .arg(format!("-sOutputFile={}", output.to_string_lossy()))
+        .arg(&input)
+        .output()
+        .map_err(|error| error.to_string())?;
+    if !result.status.success() {
+        return Err(String::from_utf8_lossy(&result.stderr).trim().to_string());
+    }
+    Ok(output.to_string_lossy().into_owned())
+}
+
 fn convert_with_sips(input: PathBuf, folder: PathBuf, format: String) -> Result<String, String> {
     let format = format.to_lowercase();
     let (sips_format, extension) = match format.as_str() {
@@ -157,7 +194,7 @@ fn main() {
             *app.state::<AppState>().tray.lock().map_err(|_| "Tray state is unavailable")? = Some(tray);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![choose_output_folder, save_pdf, read_file, convert_file, convert_uploaded_file, resize_pill, resize_window, default_output_folder, start_window_dragging, set_always_on_top, set_navbar_mode])
+        .invoke_handler(tauri::generate_handler![choose_output_folder, save_pdf, read_file, compress_pdf, convert_file, convert_uploaded_file, resize_pill, resize_window, default_output_folder, start_window_dragging, set_always_on_top, set_navbar_mode])
         .run(tauri::generate_context!())
         .expect("error while running KiloFile")
 }
