@@ -57,7 +57,7 @@ struct CompressionResult {
 fn ghostscript_path() -> Result<PathBuf, String> {
     let private_copy = std::env::var_os("HOME")
         .map(PathBuf::from)
-        .map(|home| home.join("Library/Application Support/KiloFile/ghostscript/bin/gs"));
+        .map(|home| home.join(".kilofile/ghostscript/bin/gs"));
     private_copy.into_iter()
         .chain([PathBuf::from("/opt/homebrew/bin/gs"), PathBuf::from("/usr/local/bin/gs")])
         .find(|path| path.exists())
