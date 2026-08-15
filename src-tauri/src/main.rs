@@ -2,6 +2,7 @@
 
 use std::{path::PathBuf, process::Command, sync::Mutex, time::{SystemTime, UNIX_EPOCH}};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use serde::Serialize;
 use tauri::{LogicalSize, Manager, PhysicalPosition, Size};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri_plugin_dialog::DialogExt;
@@ -46,29 +47,65 @@ fn next_compressed_path(input: &PathBuf, folder: &PathBuf) -> PathBuf {
     }
 }
 
-#[tauri::command]
-fn compress_pdf(input_path: String, folder: String, preset: String) -> Result<String, String> {
-    let input = PathBuf::from(input_path);
-    let output = next_compressed_path(&input, &PathBuf::from(folder));
-    let ghostscript = ["/opt/homebrew/bin/gs", "/usr/local/bin/gs", "gs"]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CompressionResult {
+    path: String,
+    target_met: bool,
+}
+
+fn ghostscript_path() -> Result<&'static str, String> {
+    ["/opt/homebrew/bin/gs", "/usr/local/bin/gs", "gs"]
         .into_iter()
         .find(|path| *path == "gs" || PathBuf::from(path).exists())
-        .ok_or("PDF compression requires Ghostscript. Install it with `brew install ghostscript`, then reopen KiloFile.")?;
-    let profile = if preset == "screen" { "/screen" } else { "/ebook" };
+        .ok_or("PDF compression requires Ghostscript. Install it with `brew install ghostscript`, then reopen KiloFile.".into())
+}
+
+fn run_ghostscript(input: &PathBuf, output: &PathBuf, dpi: u32) -> Result<(), String> {
+    let ghostscript = ghostscript_path()?;
+    let dpi = dpi.to_string();
     let result = Command::new(ghostscript)
         .args([
             "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.6", "-dNOPAUSE", "-dBATCH", "-dQUIET",
             "-dDetectDuplicateImages=true", "-dCompressFonts=true", "-dPreserveAnnots=true",
-            &format!("-dPDFSETTINGS={profile}"),
+            "-dDownsampleColorImages=true", "-dColorImageDownsampleType=/Bicubic",
+            "-dDownsampleGrayImages=true", "-dGrayImageDownsampleType=/Bicubic",
+            "-dDownsampleMonoImages=true", "-dMonoImageDownsampleType=/Subsample",
         ])
+        .arg(format!("-dColorImageResolution={dpi}"))
+        .arg(format!("-dGrayImageResolution={dpi}"))
+        .arg(format!("-dMonoImageResolution={dpi}"))
         .arg(format!("-sOutputFile={}", output.to_string_lossy()))
-        .arg(&input)
+        .arg(input)
         .output()
         .map_err(|error| error.to_string())?;
     if !result.status.success() {
         return Err(String::from_utf8_lossy(&result.stderr).trim().to_string());
     }
-    Ok(output.to_string_lossy().into_owned())
+    Ok(())
+}
+
+#[tauri::command]
+fn compress_pdf(input_path: String, folder: String, target_mb: Option<f64>) -> Result<CompressionResult, String> {
+    let input = PathBuf::from(input_path);
+    let output_folder = PathBuf::from(folder);
+    let output = next_compressed_path(&input, &output_folder);
+    let limit = target_mb.filter(|value| *value > 0.0).map(|value| (value * 1024.0 * 1024.0) as u64);
+    let resolutions: &[u32] = if limit.is_some() { &[170, 140, 110, 90, 72, 60, 48] } else { &[72, 60, 48] };
+    let temporary = output_folder.join(format!(".{}.kilofile-working.pdf", input.file_stem().and_then(|name| name.to_str()).unwrap_or("document")));
+    let mut chosen = None;
+    for dpi in resolutions {
+        let _ = std::fs::remove_file(&temporary);
+        run_ghostscript(&input, &temporary, *dpi)?;
+        let size = std::fs::metadata(&temporary).map_err(|error| error.to_string())?.len();
+        chosen = Some(size);
+        if limit.is_none_or(|maximum| size <= maximum) { break; }
+    }
+    std::fs::rename(&temporary, &output).map_err(|error| error.to_string())?;
+    Ok(CompressionResult {
+        path: output.to_string_lossy().into_owned(),
+        target_met: limit.is_none_or(|maximum| chosen.unwrap_or(u64::MAX) <= maximum),
+    })
 }
 
 fn convert_with_sips(input: PathBuf, folder: PathBuf, format: String) -> Result<String, String> {
