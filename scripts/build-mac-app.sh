@@ -25,8 +25,7 @@ npm run tauri -- build --bundles app
 mkdir -p "$project_dir/standalone"
 output_app="$project_dir/standalone/KiloFile.app"
 if [ -d "$output_app" ]; then
-  backup_app="$project_dir/standalone/KiloFile.$(date +%Y%m%d-%H%M%S).previous.app"
-  mv "$output_app" "$backup_app"
+  rm -rf "$output_app"
 fi
 ditto --norsrc "$build_dir/target/release/bundle/macos/KiloFile.app" "$output_app"
 find "$output_app" -name '._*' -type f -delete
