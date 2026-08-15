@@ -97,6 +97,14 @@ fn start_window_dragging(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn set_always_on_top(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    app.get_webview_window("main")
+        .ok_or("Main window not found")?
+        .set_always_on_top(enabled)
+        .map_err(|error| error.to_string())
+}
+
 fn show_navbar_window(app: &tauri::AppHandle, anchor_x: f64, anchor_y: f64) -> Result<(), String> {
     let window = app.get_webview_window("main").ok_or("Main window not found")?;
     if let Some(monitor) = window.current_monitor().map_err(|error| error.to_string())? {
@@ -149,7 +157,7 @@ fn main() {
             *app.state::<AppState>().tray.lock().map_err(|_| "Tray state is unavailable")? = Some(tray);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![choose_output_folder, save_pdf, read_file, convert_file, convert_uploaded_file, resize_pill, resize_window, default_output_folder, start_window_dragging, set_navbar_mode])
+        .invoke_handler(tauri::generate_handler![choose_output_folder, save_pdf, read_file, convert_file, convert_uploaded_file, resize_pill, resize_window, default_output_folder, start_window_dragging, set_always_on_top, set_navbar_mode])
         .run(tauri::generate_context!())
         .expect("error while running KiloFile")
 }

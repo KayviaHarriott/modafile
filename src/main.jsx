@@ -61,7 +61,9 @@ function SettingsPanel({ folder, onChoose, alwaysOnTop, onAlwaysOnTopChange, vis
 function App() {
   const [expanded, setExpanded] = useState(false); const [panel, setPanel] = useState(null); const [folder, setFolder] = useState('Downloads'); const [incomingFile, setIncomingFile] = useState(null); const [convertLocked, setConvertLocked] = useState(false); const [alwaysOnTop, setAlwaysOnTop] = useState(() => localStorage.getItem('pdf-squeeze-always-on-top') === 'true'); const navbarMode = false; const dragRef = useRef(null)
   useEffect(() => { if (isTauri()) invoke('default_output_folder').then(setFolder) }, [])
-  useEffect(() => { if (isTauri()) getCurrentWindow().setAlwaysOnTop(alwaysOnTop) }, [alwaysOnTop])
+  useEffect(() => {
+    if (isTauri()) invoke('set_always_on_top', { enabled: alwaysOnTop }).catch(console.error)
+  }, [alwaysOnTop])
   const resize = async (width) => { if (isTauri()) await invoke('resize_window', { width }) }
   const setPillSize = async (next) => { if (panel || navbarMode) return; setExpanded(next); await resize(next ? 260 : 128) }
   const showPanel = async (nextPanel) => { setPanel(nextPanel); setExpanded(true); await resize(navbarMode ? 560 : 820) }
