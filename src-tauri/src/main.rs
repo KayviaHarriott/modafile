@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::{path::PathBuf, process::Command, sync::Mutex, time::{SystemTime, UNIX_EPOCH}};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use tauri::{LogicalSize, Manager, PhysicalPosition, Size};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri_plugin_dialog::DialogExt;
@@ -27,8 +28,10 @@ fn save_pdf(folder: String, filename: String, bytes: Vec<u8>) -> Result<String, 
 }
 
 #[tauri::command]
-fn read_file(path: String) -> Result<Vec<u8>, String> {
-    std::fs::read(path).map_err(|error| error.to_string())
+fn read_file(path: String) -> Result<String, String> {
+    std::fs::read(path)
+        .map(|bytes| BASE64.encode(bytes))
+        .map_err(|error| error.to_string())
 }
 
 fn convert_with_sips(input: PathBuf, folder: PathBuf, format: String) -> Result<String, String> {
