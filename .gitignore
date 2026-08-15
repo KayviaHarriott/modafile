@@ -2,6 +2,6 @@
 node_modules/
 dist/
 standalone/
-.tools/
+.tools
 src-tauri/target/
 *.dmg
