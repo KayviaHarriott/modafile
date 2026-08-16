@@ -74,7 +74,7 @@ function App() {
   }, [alwaysOnTop])
   const resize = async (width, height = 520) => { if (isTauri()) await invoke('resize_window', { width, height }) }
   const setPillSize = async (next) => { if (panel || navbarMode) return; setExpanded(next); await resize(next ? 260 : 128) }
-  const showPanel = async (nextPanel) => { setPanel(nextPanel); setExpanded(true); await resize(navbarMode ? 560 : 820, 620) }
+  const showPanel = async (nextPanel) => { setPanel(nextPanel); setExpanded(true); await resize(navbarMode ? 560 : 820, 700) }
   const closePanel = async () => { setPanel(null); setExpanded(false); await resize(navbarMode ? 560 : 128) }
   const cancelPanelClose = () => { if (panelTimer.current) window.clearTimeout(panelTimer.current) }
   const schedulePanelClose = () => { cancelPanelClose(); panelTimer.current = window.setTimeout(closePanel, 170) }
