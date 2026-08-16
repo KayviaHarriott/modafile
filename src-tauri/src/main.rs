@@ -127,7 +127,7 @@ fn convert_with_sips(input: PathBuf, folder: PathBuf, format: String) -> Result<
         _ => return Err("This format is not supported yet. Image conversion currently supports PNG, JPG, and HEIC.".into()),
     };
     let name = input.file_stem().and_then(|name| name.to_str()).unwrap_or("converted");
-    let output = folder.join(format!("{}-converted.{}", name, extension));
+    let output = next_converted_path(&folder, name, extension);
     let result = Command::new("/usr/bin/sips")
         .args(["-s", "format", sips_format])
         .arg(&input)
@@ -139,9 +139,51 @@ fn convert_with_sips(input: PathBuf, folder: PathBuf, format: String) -> Result<
     Ok(output.to_string_lossy().into_owned())
 }
 
+fn next_converted_path(folder: &PathBuf, name: &str, extension: &str) -> PathBuf {
+    let first = folder.join(format!("{}-converted.{}", name, extension));
+    if !first.exists() { return first; }
+    let mut index = 1;
+    loop {
+        let candidate = folder.join(format!("{}-converted-{}.{}", name, index, extension));
+        if !candidate.exists() { return candidate; }
+        index += 1;
+    }
+}
+
+fn convert_media(input: PathBuf, folder: PathBuf, format: String) -> Result<String, String> {
+    let format = format.to_lowercase();
+    let name = input.file_stem().and_then(|name| name.to_str()).unwrap_or("converted");
+    let (extension, preset) = match format.as_str() {
+        "mp4" | "mov" => (format.as_str(), "PresetHighestQuality"),
+        "m4a" | "mp3" => (format.as_str(), "PresetAppleM4A"),
+        _ => return Err("Choose MP4, MOV, M4A, or MP3 for a video file.".into()),
+    };
+    let output = next_converted_path(&folder, name, extension);
+    if format == "mp3" {
+        let temporary = folder.join(format!(".{}-kilofile-audio.m4a", name));
+        let exported = Command::new("/usr/bin/avconvert")
+            .args(["--source"]).arg(&input).args(["--preset", preset, "--output"]).arg(&temporary).arg("--replace")
+            .output().map_err(|error| error.to_string())?;
+        if !exported.status.success() { return Err(String::from_utf8_lossy(&exported.stderr).trim().to_string()); }
+        let encoded = Command::new("/usr/bin/afconvert")
+            .args(["-f", "MPG3", "-d", ".mp3"]).arg(&temporary).args(["-o"]).arg(&output)
+            .output().map_err(|error| error.to_string())?;
+        let _ = std::fs::remove_file(temporary);
+        if !encoded.status.success() { return Err(String::from_utf8_lossy(&encoded.stderr).trim().to_string()); }
+    } else {
+        let result = Command::new("/usr/bin/avconvert")
+            .args(["--source"]).arg(&input).args(["--preset", preset, "--output"]).arg(&output).arg("--replace")
+            .output().map_err(|error| error.to_string())?;
+        if !result.status.success() { return Err(String::from_utf8_lossy(&result.stderr).trim().to_string()); }
+    }
+    Ok(output.to_string_lossy().into_owned())
+}
+
 #[tauri::command]
 fn convert_file(input_path: String, folder: String, format: String) -> Result<String, String> {
-    convert_with_sips(PathBuf::from(input_path), PathBuf::from(folder), format)
+    let input = PathBuf::from(input_path);
+    let extension = input.extension().and_then(|value| value.to_str()).unwrap_or("").to_lowercase();
+    if ["mov", "mp4", "m4v"].contains(&extension.as_str()) { convert_media(input, PathBuf::from(folder), format) } else { convert_with_sips(input, PathBuf::from(folder), format) }
 }
 
 #[tauri::command]
@@ -149,7 +191,8 @@ fn convert_uploaded_file(filename: String, bytes: Vec<u8>, folder: String, forma
     let unique = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|error| error.to_string())?.as_nanos();
     let source = std::env::temp_dir().join(format!("pdf-squeeze-{}-{}", unique, filename));
     std::fs::write(&source, bytes).map_err(|error| error.to_string())?;
-    let result = convert_with_sips(source.clone(), PathBuf::from(folder), format);
+    let extension = source.extension().and_then(|value| value.to_str()).unwrap_or("").to_lowercase();
+    let result = if ["mov", "mp4", "m4v"].contains(&extension.as_str()) { convert_media(source.clone(), PathBuf::from(folder), format) } else { convert_with_sips(source.clone(), PathBuf::from(folder), format) };
     let _ = std::fs::remove_file(source);
     result
 }
@@ -227,7 +270,7 @@ fn show_completion_notification(title: String, body: String) -> Result<(), Strin
 #[tauri::command]
 fn set_launch_at_login(enabled: bool) -> Result<(), String> {
     let home = std::env::var_os("HOME").map(PathBuf::from).ok_or("Home folder not found")?;
-    let label = "com.kayviaharriott.kilofile";
+    let label = "com.kilofile.app";
     let plist = home.join("Library/LaunchAgents").join(format!("{label}.plist"));
     let uid = String::from_utf8(Command::new("/usr/bin/id").arg("-u").output().map_err(|error| error.to_string())?.stdout)
         .map_err(|error| error.to_string())?
