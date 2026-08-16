@@ -15,6 +15,8 @@ function DropPanel({ folder, incomingFile, visible, autoCompress, preserveMetada
   const [goal, setGoal] = useState('smallest')
   const [targetMb, setTargetMb] = useState(2)
   const [status, setStatus] = useState('')
+  const [progress, setProgress] = useState(0)
+  const [completedFiles, setCompletedFiles] = useState([])
   const inputRef = useRef(null)
   const autoStartedRef = useRef(null)
   const receive = (nextFile) => {
@@ -25,15 +27,20 @@ function DropPanel({ folder, incomingFile, visible, autoCompress, preserveMetada
   const compress = async () => {
     if (!file) return
     setStatus('Compressing…')
+    setProgress(12)
+    const progressTimer = window.setInterval(() => setProgress((value) => Math.min(value + 11, 88)), 220)
     try {
       if (!isTauri() || !file.path) throw new Error('Please use the KiloFile macOS app to compress PDFs.')
       const result = await invoke('compress_pdf', { inputPath: file.path, folder, targetMb: goal === 'target' ? Number(targetMb) : null, preserveMetadata })
       setStatus(result.targetMet ? `Saved: ${result.path}` : `Saved smallest version: ${result.path}`)
+      setProgress(100)
+      setCompletedFiles((items) => [{ path: result.path, name: result.path.split('/').pop(), originalSize: result.originalSize, outputSize: result.outputSize }, ...items].slice(0, 3))
       onComplete?.('PDF compressed', result.path)
-    } catch (error) { setStatus(`Could not compress this PDF: ${error.message || error}`) }
+    } catch (error) { setStatus(`Could not compress this PDF: ${error.message || error}`); setProgress(0) } finally { window.clearInterval(progressTimer) }
   }
   useEffect(() => { if (autoCompress && incomingFile?.path && file?.path === incomingFile.path && autoStartedRef.current !== incomingFile.path) { autoStartedRef.current = incomingFile.path; compress() } }, [incomingFile, file, autoCompress])
-  return <section hidden={!visible} className="panel compression-panel" aria-label="Compress PDFs"><h1>Compress PDF</h1><p>Reduce file size while keeping links and form fields.</p><button className={`drop-zone compact ${file ? 'has-file' : ''}`} type="button" onClick={() => inputRef.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); receive(event.dataTransfer.files[0]) }}><span>{file?.name || 'Drop a PDF here'}</span><small>{file ? 'Replace file' : 'or click to choose a file'}</small></button><input ref={inputRef} className="file-input" type="file" accept="application/pdf,.pdf" onChange={(event) => receive(event.target.files[0])} />{file && <button type="button" className="clear-file" onClick={() => { setFile(null); setStatus('') }}>Clear file</button>}<div className="compression-options"><span className="options-label">Compression goal</span><div className="goal-row"><button className={goal === 'smallest' ? 'selected' : ''} type="button" onClick={() => setGoal('smallest')}>Smallest possible</button><button className={goal === 'target' ? 'selected' : ''} type="button" onClick={() => setGoal('target')}>Target size</button>{goal === 'target' && <label className="target-size"><input type="number" min="1" value={targetMb} onChange={(event) => setTargetMb(event.target.value)} /> MB</label>}</div><label className="preserve-toggle"><input type="checkbox" checked readOnly /> Keep links &amp; form fields</label></div><button className="compress-action" type="button" disabled={!file || status === 'Compressing…'} onClick={compress}>{status === 'Compressing…' ? 'Compressing…' : 'Compress PDF'}</button>{status && <span className="compression-status">{status}</span>}</section>
+  const size = (bytes) => `${(bytes / 1024 / 1024).toFixed(bytes > 9_000_000 ? 1 : 2)} MB`
+  return <section hidden={!visible} className="panel compression-panel" aria-label="Compress PDFs"><h1>Compress PDFs</h1><button className={`drop-zone compact ${file ? 'has-file' : ''}`} title="Accepted: PDF files" type="button" onClick={() => inputRef.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); receive(event.dataTransfer.files[0]) }}><span>{file?.name || 'Drag & drop a PDF or choose file'}</span><small>{file ? 'Click to replace · PDF' : 'Accepted file type: PDF'}</small></button><input ref={inputRef} className="file-input" type="file" accept="application/pdf,.pdf" onChange={(event) => receive(event.target.files[0])} />{file && <button type="button" className="clear-file" onClick={() => { setFile(null); setStatus(''); setProgress(0) }}>Clear file</button>}<div className="compression-options"><span className="options-label">Compression goal</span><div className="goal-row"><button className={goal === 'smallest' ? 'selected' : ''} type="button" onClick={() => setGoal('smallest')}>Smallest possible</button><button className={goal === 'target' ? 'selected' : ''} type="button" onClick={() => setGoal('target')}>Target size</button>{goal === 'target' && <label className="target-size"><input type="number" min="1" value={targetMb} onChange={(event) => setTargetMb(event.target.value)} /> MB</label>}</div></div>{status === 'Compressing…' && <div className="progress-wrap"><span>Compressing PDF</span><div className="progress-track"><i style={{ width: `${progress}%` }} /></div></div>}<div className="completed-files"><span className="options-label">Completed files</span>{completedFiles.length ? completedFiles.map((item) => <div className="completed-file" key={item.path}><b>PDF</b><span><strong>{item.name}</strong><small>{size(item.outputSize)} · compressed by {Math.max(0, Math.round((1 - item.outputSize / item.originalSize) * 100))}%</small></span><button type="button" title="Reveal in Finder" aria-label="Reveal in Finder" onClick={() => invoke('reveal_in_finder', { path: item.path })}>⌁</button></div>) : <small className="empty-completed">Completed files will appear here.</small>}</div>{status && status !== 'Compressing…' && <span className="compression-status">{status}</span>}<button className="compress-action" type="button" disabled={!file || status === 'Compressing…'} onClick={compress}>{status === 'Compressing…' ? 'Compressing…' : 'Compress PDF'}</button></section>
 }
 function ConvertPanel({ folder, incomingFile, onFileChange, visible, onComplete }) {
   const [file, setFile] = useState(null)

@@ -52,6 +52,8 @@ fn next_compressed_path(input: &PathBuf, folder: &PathBuf) -> PathBuf {
 struct CompressionResult {
     path: String,
     target_met: bool,
+    original_size: u64,
+    output_size: u64,
 }
 
 fn ghostscript_path() -> Result<PathBuf, String> {
@@ -93,6 +95,7 @@ fn run_ghostscript(input: &PathBuf, output: &PathBuf, dpi: u32, preserve_metadat
 #[tauri::command]
 fn compress_pdf(input_path: String, folder: String, target_mb: Option<f64>, preserve_metadata: bool) -> Result<CompressionResult, String> {
     let input = PathBuf::from(input_path);
+    let original_size = std::fs::metadata(&input).map_err(|error| error.to_string())?.len();
     let output_folder = PathBuf::from(folder);
     let output = next_compressed_path(&input, &output_folder);
     let limit = target_mb.filter(|value| *value > 0.0).map(|value| (value * 1024.0 * 1024.0) as u64);
@@ -110,6 +113,8 @@ fn compress_pdf(input_path: String, folder: String, target_mb: Option<f64>, pres
     Ok(CompressionResult {
         path: output.to_string_lossy().into_owned(),
         target_met: limit.is_none_or(|maximum| chosen.unwrap_or(u64::MAX) <= maximum),
+        original_size,
+        output_size: chosen.unwrap_or(0),
     })
 }
 
