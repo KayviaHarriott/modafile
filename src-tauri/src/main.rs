@@ -156,14 +156,14 @@ fn convert_uploaded_file(filename: String, bytes: Vec<u8>, folder: String, forma
 
 #[tauri::command]
 fn resize_pill(app: tauri::AppHandle, expanded: bool) -> Result<(), String> {
-    resize_window(app, if expanded { 284.0 } else { 128.0 })
+    resize_window(app, if expanded { 284.0 } else { 128.0 }, None)
 }
 
 #[tauri::command]
-fn resize_window(app: tauri::AppHandle, width: f64) -> Result<(), String> {
+fn resize_window(app: tauri::AppHandle, width: f64, height: Option<f64>) -> Result<(), String> {
     let window = app.get_webview_window("main").ok_or("Main window not found")?;
     let position = window.outer_position().map_err(|error| error.to_string())?;
-    window.set_size(Size::Logical(LogicalSize::new(width, 520.0))).map_err(|error| error.to_string())?;
+    window.set_size(Size::Logical(LogicalSize::new(width, height.unwrap_or(520.0)))).map_err(|error| error.to_string())?;
     window.set_position(PhysicalPosition::new(position.x, position.y)).map_err(|error| error.to_string())?;
     Ok(())
 }
