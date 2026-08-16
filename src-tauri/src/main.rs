@@ -65,11 +65,11 @@ fn ghostscript_path() -> Result<PathBuf, String> {
         .ok_or("PDF compression requires Ghostscript. Reinstall KiloFile's local PDF tools, then reopen KiloFile.".into())
 }
 
-fn run_ghostscript(input: &PathBuf, output: &PathBuf, dpi: u32) -> Result<(), String> {
+fn run_ghostscript(input: &PathBuf, output: &PathBuf, dpi: u32, preserve_metadata: bool) -> Result<(), String> {
     let ghostscript = ghostscript_path()?;
     let dpi = dpi.to_string();
-    let result = Command::new(ghostscript)
-        .args([
+    let mut command = Command::new(ghostscript);
+    command.args([
             "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.6", "-dNOPAUSE", "-dBATCH", "-dQUIET",
             "-dDetectDuplicateImages=true", "-dCompressFonts=true", "-dPreserveAnnots=true",
             "-dDownsampleColorImages=true", "-dColorImageDownsampleType=/Bicubic",
@@ -80,8 +80,9 @@ fn run_ghostscript(input: &PathBuf, output: &PathBuf, dpi: u32) -> Result<(), St
         .arg(format!("-dGrayImageResolution={dpi}"))
         .arg(format!("-dMonoImageResolution={dpi}"))
         .arg(format!("-sOutputFile={}", output.to_string_lossy()))
-        .arg(input)
-        .output()
+        .arg(input);
+    if !preserve_metadata { command.args(["-dOmitInfoDate=true", "-dOmitID=true"]); }
+    let result = command.output()
         .map_err(|error| error.to_string())?;
     if !result.status.success() {
         return Err(String::from_utf8_lossy(&result.stderr).trim().to_string());
@@ -90,7 +91,7 @@ fn run_ghostscript(input: &PathBuf, output: &PathBuf, dpi: u32) -> Result<(), St
 }
 
 #[tauri::command]
-fn compress_pdf(input_path: String, folder: String, target_mb: Option<f64>) -> Result<CompressionResult, String> {
+fn compress_pdf(input_path: String, folder: String, target_mb: Option<f64>, preserve_metadata: bool) -> Result<CompressionResult, String> {
     let input = PathBuf::from(input_path);
     let output_folder = PathBuf::from(folder);
     let output = next_compressed_path(&input, &output_folder);
@@ -100,7 +101,7 @@ fn compress_pdf(input_path: String, folder: String, target_mb: Option<f64>) -> R
     let mut chosen = None;
     for dpi in resolutions {
         let _ = std::fs::remove_file(&temporary);
-        run_ghostscript(&input, &temporary, *dpi)?;
+        run_ghostscript(&input, &temporary, *dpi, preserve_metadata)?;
         let size = std::fs::metadata(&temporary).map_err(|error| error.to_string())?.len();
         chosen = Some(size);
         if limit.is_none_or(|maximum| size <= maximum) { break; }
@@ -199,6 +200,48 @@ fn close_window(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn focus_window(app: tauri::AppHandle) -> Result<(), String> {
+    app.get_webview_window("main").ok_or("Main window not found")?.set_focus().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn reveal_in_finder(path: String) -> Result<(), String> {
+    Command::new("/usr/bin/open").args(["-R", &path]).output().map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn show_completion_notification(title: String, body: String) -> Result<(), String> {
+    Command::new("/usr/bin/osascript")
+        .args(["-e", "on run argv\n display notification (item 2 of argv) with title (item 1 of argv)\nend run", &title, &body])
+        .output().map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_launch_at_login(enabled: bool) -> Result<(), String> {
+    let home = std::env::var_os("HOME").map(PathBuf::from).ok_or("Home folder not found")?;
+    let label = "com.kayviaharriott.kilofile";
+    let plist = home.join("Library/LaunchAgents").join(format!("{label}.plist"));
+    let uid = String::from_utf8(Command::new("/usr/bin/id").arg("-u").output().map_err(|error| error.to_string())?.stdout)
+        .map_err(|error| error.to_string())?
+        .trim()
+        .to_string();
+    let _ = Command::new("/bin/launchctl").args(["bootout", &format!("gui/{uid}/{label}")]).output();
+    if enabled {
+        let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+        let escaped = executable.to_string_lossy().replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+        let content = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>Label</key><string>{label}</string><key>ProgramArguments</key><array><string>{escaped}</string></array><key>RunAtLoad</key><true/></dict></plist>");
+        std::fs::create_dir_all(plist.parent().ok_or("LaunchAgents path unavailable")?).map_err(|error| error.to_string())?;
+        std::fs::write(&plist, content).map_err(|error| error.to_string())?;
+        Command::new("/bin/launchctl").args(["bootstrap", &format!("gui/{uid}"), &plist.to_string_lossy()]).output().map_err(|error| error.to_string())?;
+    } else if plist.exists() {
+        std::fs::remove_file(plist).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 fn show_navbar_window(app: &tauri::AppHandle, anchor_x: f64, anchor_y: f64) -> Result<(), String> {
     let window = app.get_webview_window("main").ok_or("Main window not found")?;
     if let Some(monitor) = window.current_monitor().map_err(|error| error.to_string())? {
@@ -251,7 +294,7 @@ fn main() {
             *app.state::<AppState>().tray.lock().map_err(|_| "Tray state is unavailable")? = Some(tray);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![choose_output_folder, save_pdf, read_file, compress_pdf, convert_file, convert_uploaded_file, resize_pill, resize_window, default_output_folder, start_window_dragging, set_always_on_top, minimize_window, close_window, set_navbar_mode])
+        .invoke_handler(tauri::generate_handler![choose_output_folder, save_pdf, read_file, compress_pdf, convert_file, convert_uploaded_file, resize_pill, resize_window, default_output_folder, start_window_dragging, set_always_on_top, minimize_window, close_window, focus_window, reveal_in_finder, show_completion_notification, set_launch_at_login, set_navbar_mode])
         .run(tauri::generate_context!())
         .expect("error while running KiloFile")
 }
