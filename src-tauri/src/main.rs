@@ -64,7 +64,7 @@ fn ghostscript_path() -> Result<PathBuf, String> {
         .chain([PathBuf::from("/opt/homebrew/bin/gs"), PathBuf::from("/usr/local/bin/gs")])
         .find(|path| path.exists())
         .or_else(|| Command::new("gs").arg("--version").output().ok().map(|_| PathBuf::from("gs")))
-        .ok_or("PDF compression requires Ghostscript. Reinstall KiloFile's local PDF tools, then reopen KiloFile.".into())
+        .ok_or("PDF compression requires Ghostscript. Reinstall Modafile's local PDF tools, then reopen Modafile.".into())
 }
 
 fn run_ghostscript(input: &PathBuf, output: &PathBuf, dpi: u32, preserve_metadata: bool) -> Result<(), String> {
@@ -270,7 +270,7 @@ fn show_completion_notification(title: String, body: String) -> Result<(), Strin
 #[tauri::command]
 fn set_launch_at_login(enabled: bool) -> Result<(), String> {
     let home = std::env::var_os("HOME").map(PathBuf::from).ok_or("Home folder not found")?;
-    let label = "com.kilofile.desktop";
+    let label = "com.modafile.desktop";
     let plist = home.join("Library/LaunchAgents").join(format!("{label}.plist"));
     let uid = String::from_utf8(Command::new("/usr/bin/id").arg("-u").output().map_err(|error| error.to_string())?.stdout)
         .map_err(|error| error.to_string())?
@@ -325,7 +325,7 @@ fn main() {
             let tray = TrayIconBuilder::with_id("pdf-squeeze-navbar")
                 .icon(app.default_window_icon().expect("missing app icon").clone())
                 .icon_as_template(true)
-                .tooltip("KiloFile")
+                .tooltip("Modafile")
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, position, .. } = event {
@@ -344,5 +344,5 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![choose_output_folder, save_pdf, read_file, compress_pdf, convert_file, convert_uploaded_file, resize_pill, resize_window, default_output_folder, start_window_dragging, set_always_on_top, minimize_window, close_window, focus_window, reveal_in_finder, show_completion_notification, set_launch_at_login, set_navbar_mode])
         .run(tauri::generate_context!())
-        .expect("error while running KiloFile")
+        .expect("error while running Modafile")
 }

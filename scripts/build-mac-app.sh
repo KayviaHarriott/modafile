@@ -24,11 +24,11 @@ npm install
 npm run tauri -- build --bundles "$bundle_targets"
 
 mkdir -p "$project_dir/standalone"
-output_app="$project_dir/standalone/KiloFile.app"
+output_app="$project_dir/standalone/Modafile.app"
 if [ -d "$output_app" ]; then
   rm -rf "$output_app"
 fi
-ditto --norsrc "$build_dir/target/release/bundle/macos/KiloFile.app" "$output_app"
+ditto --norsrc "$build_dir/target/release/bundle/macos/Modafile.app" "$output_app"
 find "$output_app" -name '._*' -type f -delete
 codesign --force --deep --sign - "$output_app"
 
@@ -41,8 +41,8 @@ case ",$bundle_targets," in
       printf '%s\n' 'DMG bundle was not created.' >&2
       exit 1
     fi
-    rm -f "$project_dir/standalone/KiloFile.dmg"
-    cp "$output_dmg" "$project_dir/standalone/KiloFile.dmg"
-    printf 'Built %s\n' "$project_dir/standalone/KiloFile.dmg"
+    rm -f "$project_dir/standalone/Modafile.dmg"
+    cp "$output_dmg" "$project_dir/standalone/Modafile.dmg"
+    printf 'Built %s\n' "$project_dir/standalone/Modafile.dmg"
     ;;
 esac
