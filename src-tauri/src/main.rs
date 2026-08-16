@@ -270,7 +270,7 @@ fn show_completion_notification(title: String, body: String) -> Result<(), Strin
 #[tauri::command]
 fn set_launch_at_login(enabled: bool) -> Result<(), String> {
     let home = std::env::var_os("HOME").map(PathBuf::from).ok_or("Home folder not found")?;
-    let label = "com.kilofile.app";
+    let label = "com.kilofile.desktop";
     let plist = home.join("Library/LaunchAgents").join(format!("{label}.plist"));
     let uid = String::from_utf8(Command::new("/usr/bin/id").arg("-u").output().map_err(|error| error.to_string())?.stdout)
         .map_err(|error| error.to_string())?
