@@ -1,5 +1,7 @@
 # Modafile
 
+![Modafile app preview](assets/modafile-preview.png)
+
 A lightweight native macOS utility for PDF compression and file conversion. PDF optimization keeps interactive content such as links, form fields, selectable text, and vector graphics intact.
 
 ## Run
