@@ -35,13 +35,13 @@ fn read_file(path: String) -> Result<String, String> {
         .map_err(|error| error.to_string())
 }
 
-fn next_compressed_path(input: &PathBuf, folder: &PathBuf) -> PathBuf {
+fn next_compressed_path(input: &PathBuf, folder: &PathBuf, extension: &str) -> PathBuf {
     let stem = input.file_stem().and_then(|name| name.to_str()).unwrap_or("document");
-    let first = folder.join(format!("{}-compressed.pdf", stem));
+    let first = folder.join(format!("{}-compressed.{}", stem, extension));
     if !first.exists() { return first; }
     let mut index = 1;
     loop {
-        let candidate = folder.join(format!("{}-compressed-{}.pdf", stem, index));
+        let candidate = folder.join(format!("{}-compressed-{}.{}", stem, index, extension));
         if !candidate.exists() { return candidate; }
         index += 1;
     }
@@ -92,12 +92,11 @@ fn run_ghostscript(input: &PathBuf, output: &PathBuf, dpi: u32, preserve_metadat
     Ok(())
 }
 
-#[tauri::command]
-fn compress_pdf(input_path: String, folder: String, target_mb: Option<f64>, preserve_metadata: bool) -> Result<CompressionResult, String> {
+fn compress_pdf_document(input_path: String, folder: String, target_mb: Option<f64>, preserve_metadata: bool) -> Result<CompressionResult, String> {
     let input = PathBuf::from(input_path);
     let original_size = std::fs::metadata(&input).map_err(|error| error.to_string())?.len();
     let output_folder = PathBuf::from(folder);
-    let output = next_compressed_path(&input, &output_folder);
+    let output = next_compressed_path(&input, &output_folder, "pdf");
     let limit = target_mb.filter(|value| *value > 0.0).map(|value| (value * 1024.0 * 1024.0) as u64);
     // Target mode favours the first (highest-quality) result that fits the target.
     // Smallest mode evaluates every level and retains the smallest actual file.
@@ -136,6 +135,62 @@ fn compress_pdf(input_path: String, folder: String, target_mb: Option<f64>, pres
         original_size,
         output_size,
     })
+}
+
+fn run_sips_compression(input: &PathBuf, output: &PathBuf, format: &str, quality: Option<u8>, max_dimension: Option<u32>) -> Result<(), String> {
+    let mut command = Command::new("/usr/bin/sips");
+    command.args(["-s", "format", format]);
+    if let Some(quality) = quality { command.args(["-s", "formatOptions", &quality.to_string()]); }
+    if let Some(dimension) = max_dimension { command.args(["-Z", &dimension.to_string()]); }
+    let result = command.arg(input).arg("--out").arg(output).output().map_err(|error| error.to_string())?;
+    if !result.status.success() { return Err(String::from_utf8_lossy(&result.stderr).trim().to_string()); }
+    Ok(())
+}
+
+fn compress_image(input_path: String, folder: String, target_mb: Option<f64>) -> Result<CompressionResult, String> {
+    let input = PathBuf::from(input_path);
+    let original_size = std::fs::metadata(&input).map_err(|error| error.to_string())?.len();
+    let extension = input.extension().and_then(|value| value.to_str()).unwrap_or("").to_lowercase();
+    let (format, output_extension, candidates): (&str, &str, Vec<(Option<u8>, Option<u32>)>) = match extension.as_str() {
+        "jpg" | "jpeg" => ("jpeg", "jpg", vec![(Some(92), None), (Some(82), None), (Some(70), None), (Some(58), None), (Some(45), None), (Some(35), None)]),
+        "heic" | "heif" => ("heic", "heic", vec![(Some(92), None), (Some(82), None), (Some(70), None), (Some(58), None), (Some(45), None), (Some(35), None)]),
+        "png" => ("png", "png", vec![(None, None), (None, Some(2560)), (None, Some(2048)), (None, Some(1600)), (None, Some(1280)), (None, Some(960)), (None, Some(720))]),
+        _ => return Err("Supported image formats are JPG, JPEG, PNG, HEIC, and HEIF.".into()),
+    };
+    let output_folder = PathBuf::from(folder);
+    let output = next_compressed_path(&input, &output_folder, output_extension);
+    let limit = target_mb.filter(|value| *value > 0.0).map(|value| (value * 1024.0 * 1024.0) as u64);
+    if limit.is_some_and(|maximum| original_size <= maximum) {
+        std::fs::copy(&input, &output).map_err(|error| error.to_string())?;
+        return Ok(CompressionResult { path: output.to_string_lossy().into_owned(), target_met: true, original_size, output_size: original_size });
+    }
+    let temporary = output_folder.join(format!(".{}.modafile-working.{}", input.file_stem().and_then(|name| name.to_str()).unwrap_or("image"), output_extension));
+    let mut best: Option<(Option<u8>, Option<u32>, u64)> = None;
+    for (quality, dimension) in candidates {
+        let _ = std::fs::remove_file(&temporary);
+        run_sips_compression(&input, &temporary, format, quality, dimension)?;
+        let size = std::fs::metadata(&temporary).map_err(|error| error.to_string())?.len();
+        if best.is_none_or(|(_, _, smallest)| size < smallest) { best = Some((quality, dimension, size)); }
+        if limit.is_some_and(|maximum| size <= maximum) { break; }
+    }
+    let (quality, dimension, compressed_size) = best.ok_or("No image compression result was produced")?;
+    let output_size = if compressed_size < original_size {
+        let _ = std::fs::remove_file(&temporary);
+        run_sips_compression(&input, &temporary, format, quality, dimension)?;
+        std::fs::rename(&temporary, &output).map_err(|error| error.to_string())?;
+        compressed_size
+    } else {
+        let _ = std::fs::remove_file(&temporary);
+        std::fs::copy(&input, &output).map_err(|error| error.to_string())?;
+        original_size
+    };
+    Ok(CompressionResult { path: output.to_string_lossy().into_owned(), target_met: limit.is_none_or(|maximum| output_size <= maximum), original_size, output_size })
+}
+
+#[tauri::command]
+fn compress_pdf(input_path: String, folder: String, target_mb: Option<f64>, preserve_metadata: bool) -> Result<CompressionResult, String> {
+    let extension = PathBuf::from(&input_path).extension().and_then(|value| value.to_str()).unwrap_or("").to_lowercase();
+    if extension == "pdf" { compress_pdf_document(input_path, folder, target_mb, preserve_metadata) } else { compress_image(input_path, folder, target_mb) }
 }
 
 fn convert_with_sips(input: PathBuf, folder: PathBuf, format: String) -> Result<String, String> {
