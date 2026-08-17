@@ -104,7 +104,59 @@ impl Drop for TemporaryFile {
     }
 }
 
-fn compress_pdf_document(input_path: String, folder: String, target_mb: Option<f64>, preserve_metadata: bool) -> Result<CompressionResult, String> {
+#[cfg(debug_assertions)]
+fn pdf_compat_path(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/pdf-compat"))
+}
+
+#[cfg(not(debug_assertions))]
+fn pdf_compat_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path().resource_dir().map(|path| path.join("resources/pdf-compat")).map_err(|error| error.to_string())
+}
+
+fn pdf_output_is_compatible(app: &tauri::AppHandle, source: &PathBuf, output: &PathBuf) -> Result<bool, String> {
+    let status = Command::new(pdf_compat_path(app)?)
+        .args(["check"])
+        .arg(source)
+        .arg(output)
+        .status()
+        .map_err(|error| error.to_string())?;
+    Ok(status.success())
+}
+
+fn rasterize_pdf_fallback(app: &tauri::AppHandle, input: &PathBuf, output: &PathBuf, dpi: u32) -> Result<(), String> {
+    let folder = output.parent().ok_or("Output folder is unavailable")?;
+    let stem = input.file_stem().and_then(|value| value.to_str()).unwrap_or("document");
+    let prefix = folder.join(format!(".{}-kilofile-raster-%03d.jpg", stem));
+    let cleanup_prefix = format!(".{}-kilofile-raster-", stem);
+    let gs = ghostscript_path()?;
+    let result = Command::new(gs)
+        .args(["-sDEVICE=jpeg", "-dNOPAUSE", "-dBATCH", "-dQUIET", "-dJPEGQ=82"])
+        .arg(format!("-r{dpi}"))
+        .arg(format!("-sOutputFile={}", prefix.to_string_lossy()))
+        .arg(input)
+        .output()
+        .map_err(|error| error.to_string())?;
+    if !result.status.success() { return Err(String::from_utf8_lossy(&result.stderr).trim().to_string()); }
+    let mut pages: Vec<PathBuf> = std::fs::read_dir(folder).map_err(|error| error.to_string())?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.starts_with(&cleanup_prefix) && name.ends_with(".jpg")))
+        .collect();
+    pages.sort();
+    let result = if pages.is_empty() { Err("PDF fallback could not render any pages.".into()) } else {
+        let status = Command::new(pdf_compat_path(app)?)
+            .args(["make-pdf", output.to_string_lossy().as_ref(), &dpi.to_string()])
+            .args(&pages)
+            .status()
+            .map_err(|error| error.to_string())?;
+        if status.success() { Ok(()) } else { Err("PDF fallback could not create a compatible PDF.".into()) }
+    };
+    for page in pages { let _ = std::fs::remove_file(page); }
+    result
+}
+
+fn compress_pdf_document(app: &tauri::AppHandle, input_path: String, folder: String, target_mb: Option<f64>, preserve_metadata: bool) -> Result<CompressionResult, String> {
     let input = PathBuf::from(input_path);
     let original_size = std::fs::metadata(&input).map_err(|error| error.to_string())?.len();
     let output_folder = PathBuf::from(folder);
@@ -135,8 +187,13 @@ fn compress_pdf_document(input_path: String, folder: String, target_mb: Option<f
     let output_size = if compressed_size < original_size {
         let _ = std::fs::remove_file(&temporary);
         run_ghostscript(&input, &temporary, dpi, preserve_metadata)?;
+        if !pdf_output_is_compatible(app, &input, &temporary)? {
+            let _ = std::fs::remove_file(&temporary);
+            rasterize_pdf_fallback(app, &input, &temporary, 144)?;
+        }
+        let final_size = std::fs::metadata(&temporary).map_err(|error| error.to_string())?.len();
         std::fs::rename(&temporary, &output).map_err(|error| error.to_string())?;
-        compressed_size
+        final_size
     } else {
         // Never advertise a larger re-encoded PDF as a compressed result.
         let _ = std::fs::remove_file(&temporary);
@@ -202,10 +259,10 @@ fn compress_image(input_path: String, folder: String, target_mb: Option<f64>) ->
 }
 
 #[tauri::command]
-async fn compress_pdf(input_path: String, folder: String, target_mb: Option<f64>, preserve_metadata: bool) -> Result<CompressionResult, String> {
+async fn compress_pdf(app: tauri::AppHandle, input_path: String, folder: String, target_mb: Option<f64>, preserve_metadata: bool) -> Result<CompressionResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let extension = PathBuf::from(&input_path).extension().and_then(|value| value.to_str()).unwrap_or("").to_lowercase();
-        if extension == "pdf" { compress_pdf_document(input_path, folder, target_mb, preserve_metadata) } else { compress_image(input_path, folder, target_mb) }
+        if extension == "pdf" { compress_pdf_document(&app, input_path, folder, target_mb, preserve_metadata) } else { compress_image(input_path, folder, target_mb) }
     }).await.map_err(|error| error.to_string())?
 }
 
