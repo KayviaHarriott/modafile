@@ -102,6 +102,10 @@
 .canvas.light .convert-panel .drop-zone.compact:hover { border-color:#1c1c1c78; background:#fafafa; }
 .canvas.light .convert-panel .options-label { color:#141416; }
 .canvas.light .convert-panel .format-note, .canvas.light .conversion-placeholder { color:#727278; }
+
+/* Keep support text identical across the Compress and Convert workflows. */
+.compression-panel .format-note, .convert-panel .format-note { color:#99999e !important; }
+.canvas.light .compression-panel .format-note, .canvas.light .convert-panel .format-note { color:#727278 !important; }
 .canvas.light .convert-panel .format-row button { border-color:#20202422; color:#232326; background:#fff; }
 .canvas.light .convert-panel .format-row button.selected { border-color:#242428; color:#fff; background:#202024; }
 .toggle-switch { position:relative; display:block; padding:0; border:0; border-radius:999px; background:#626262; cursor:pointer; transition:background 160ms ease; }.toggle-switch i { position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%; background:#fff; box-shadow:0 1px 3px #00000050; transition:transform 160ms ease; }.toggle-switch.is-on { background:#fff; }.toggle-switch.is-on i { transform:translateX(18px); background:#191919; }.toggle-switch:focus-visible { outline:2px solid #fff; outline-offset:2px; }
