@@ -35,19 +35,4 @@ if CommandLine.arguments.count == 4, CommandLine.arguments[1] == "check" {
     } catch { exit(2) }
 }
 
-if CommandLine.arguments.count >= 5, CommandLine.arguments[1] == "make-pdf", let dpi = Double(CommandLine.arguments[3]) {
-    let output = URL(fileURLWithPath: CommandLine.arguments[2])
-    let images = CommandLine.arguments.dropFirst(4).compactMap { NSImage(contentsOfFile: $0)?.cgImage(forProposedRect: nil, context: nil, hints: nil) }
-    guard let first = images.first else { exit(2) }
-    var mediaBox = CGRect(origin: .zero, size: CGSize(width: CGFloat(first.width) * 72 / dpi, height: CGFloat(first.height) * 72 / dpi))
-    guard let context = CGContext(output as CFURL, mediaBox: &mediaBox, nil) else { exit(2) }
-    for cgImage in images {
-        context.beginPDFPage(nil)
-        context.draw(cgImage, in: mediaBox)
-        context.endPDFPage()
-    }
-    context.closePDF()
-    exit(0)
-}
-
 exit(2)

@@ -33,7 +33,7 @@ function DropPanel({ folder, incomingFile, visible, autoCompress, preserveMetada
     try {
       if (!isTauri() || !file.path) throw new Error('Please use the Modafile macOS app to compress files.')
       const result = await invoke('compress_pdf', { inputPath: file.path, folder, targetMb: goal === 'target' ? Number(targetMb) : null, preserveMetadata })
-      setStatus(result.targetMet ? `Saved: ${result.path}` : `Saved smallest version: ${result.path}`)
+      setStatus(result.preservedOriginal ? `Saved original safely: ${result.path}` : result.targetMet ? `Saved: ${result.path}` : `Saved smallest version: ${result.path}`)
       setProgress(100)
       setCompletedFiles((items) => [{ path: result.path, name: result.path.split('/').pop(), originalSize: result.originalSize, outputSize: result.outputSize }, ...items].slice(0, 3))
       onComplete?.('File compressed', result.path)

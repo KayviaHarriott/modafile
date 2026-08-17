@@ -52,6 +52,7 @@ fn next_compressed_path(input: &PathBuf, folder: &PathBuf, extension: &str) -> P
 struct CompressionResult {
     path: String,
     target_met: bool,
+    preserved_original: bool,
     original_size: u64,
     output_size: u64,
 }
@@ -124,38 +125,6 @@ fn pdf_output_is_compatible(app: &tauri::AppHandle, source: &PathBuf, output: &P
     Ok(status.success())
 }
 
-fn rasterize_pdf_fallback(app: &tauri::AppHandle, input: &PathBuf, output: &PathBuf, dpi: u32) -> Result<(), String> {
-    let folder = output.parent().ok_or("Output folder is unavailable")?;
-    let stem = input.file_stem().and_then(|value| value.to_str()).unwrap_or("document");
-    let prefix = folder.join(format!(".{}-kilofile-raster-%03d.jpg", stem));
-    let cleanup_prefix = format!(".{}-kilofile-raster-", stem);
-    let gs = ghostscript_path()?;
-    let result = Command::new(gs)
-        .args(["-sDEVICE=jpeg", "-dNOPAUSE", "-dBATCH", "-dQUIET", "-dJPEGQ=82"])
-        .arg(format!("-r{dpi}"))
-        .arg(format!("-sOutputFile={}", prefix.to_string_lossy()))
-        .arg(input)
-        .output()
-        .map_err(|error| error.to_string())?;
-    if !result.status.success() { return Err(String::from_utf8_lossy(&result.stderr).trim().to_string()); }
-    let mut pages: Vec<PathBuf> = std::fs::read_dir(folder).map_err(|error| error.to_string())?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| path.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.starts_with(&cleanup_prefix) && name.ends_with(".jpg")))
-        .collect();
-    pages.sort();
-    let result = if pages.is_empty() { Err("PDF fallback could not render any pages.".into()) } else {
-        let status = Command::new(pdf_compat_path(app)?)
-            .args(["make-pdf", output.to_string_lossy().as_ref(), &dpi.to_string()])
-            .args(&pages)
-            .status()
-            .map_err(|error| error.to_string())?;
-        if status.success() { Ok(()) } else { Err("PDF fallback could not create a compatible PDF.".into()) }
-    };
-    for page in pages { let _ = std::fs::remove_file(page); }
-    result
-}
-
 fn compress_pdf_document(app: &tauri::AppHandle, input_path: String, folder: String, target_mb: Option<f64>, preserve_metadata: bool) -> Result<CompressionResult, String> {
     let input = PathBuf::from(input_path);
     let original_size = std::fs::metadata(&input).map_err(|error| error.to_string())?.len();
@@ -172,7 +141,7 @@ fn compress_pdf_document(app: &tauri::AppHandle, input_path: String, folder: Str
     // not recompress it into a larger file simply because a target was selected.
     if limit.is_some_and(|maximum| original_size <= maximum) {
         std::fs::copy(&input, &output).map_err(|error| error.to_string())?;
-        return Ok(CompressionResult { path: output.to_string_lossy().into_owned(), target_met: true, original_size, output_size: original_size });
+        return Ok(CompressionResult { path: output.to_string_lossy().into_owned(), target_met: true, preserved_original: true, original_size, output_size: original_size });
     }
 
     let mut best: Option<(u32, u64)> = None;
@@ -184,25 +153,30 @@ fn compress_pdf_document(app: &tauri::AppHandle, input_path: String, folder: Str
         if limit.is_some_and(|maximum| size <= maximum) { break; }
     }
     let (dpi, compressed_size) = best.ok_or("No PDF compression result was produced")?;
-    let output_size = if compressed_size < original_size {
+    let (output_size, preserved_original) = if compressed_size < original_size {
         let _ = std::fs::remove_file(&temporary);
         run_ghostscript(&input, &temporary, dpi, preserve_metadata)?;
         if !pdf_output_is_compatible(app, &input, &temporary)? {
+            // A rasterized substitute appears correct but destroys selectable text,
+            // search, reading order, links, and forms. Never trade those away.
             let _ = std::fs::remove_file(&temporary);
-            rasterize_pdf_fallback(app, &input, &temporary, 144)?;
+            std::fs::copy(&input, &output).map_err(|error| error.to_string())?;
+            (original_size, true)
+        } else {
+            let final_size = std::fs::metadata(&temporary).map_err(|error| error.to_string())?.len();
+            std::fs::rename(&temporary, &output).map_err(|error| error.to_string())?;
+            (final_size, false)
         }
-        let final_size = std::fs::metadata(&temporary).map_err(|error| error.to_string())?.len();
-        std::fs::rename(&temporary, &output).map_err(|error| error.to_string())?;
-        final_size
     } else {
         // Never advertise a larger re-encoded PDF as a compressed result.
         let _ = std::fs::remove_file(&temporary);
         std::fs::copy(&input, &output).map_err(|error| error.to_string())?;
-        original_size
+        (original_size, true)
     };
     Ok(CompressionResult {
         path: output.to_string_lossy().into_owned(),
         target_met: limit.is_none_or(|maximum| output_size <= maximum),
+        preserved_original,
         original_size,
         output_size,
     })
@@ -233,7 +207,7 @@ fn compress_image(input_path: String, folder: String, target_mb: Option<f64>) ->
     let limit = target_mb.filter(|value| *value > 0.0).map(|value| (value * 1024.0 * 1024.0) as u64);
     if limit.is_some_and(|maximum| original_size <= maximum) {
         std::fs::copy(&input, &output).map_err(|error| error.to_string())?;
-        return Ok(CompressionResult { path: output.to_string_lossy().into_owned(), target_met: true, original_size, output_size: original_size });
+        return Ok(CompressionResult { path: output.to_string_lossy().into_owned(), target_met: true, preserved_original: true, original_size, output_size: original_size });
     }
     let temporary = output_folder.join(format!(".{}.modafile-working.{}", input.file_stem().and_then(|name| name.to_str()).unwrap_or("image"), output_extension));
     let mut best: Option<(Option<u8>, Option<u32>, u64)> = None;
@@ -255,7 +229,7 @@ fn compress_image(input_path: String, folder: String, target_mb: Option<f64>) ->
         std::fs::copy(&input, &output).map_err(|error| error.to_string())?;
         original_size
     };
-    Ok(CompressionResult { path: output.to_string_lossy().into_owned(), target_met: limit.is_none_or(|maximum| output_size <= maximum), original_size, output_size })
+    Ok(CompressionResult { path: output.to_string_lossy().into_owned(), target_met: limit.is_none_or(|maximum| output_size <= maximum), preserved_original: output_size == original_size, original_size, output_size })
 }
 
 #[tauri::command]
