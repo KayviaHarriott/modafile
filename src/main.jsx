@@ -49,8 +49,8 @@ function ConvertPanel({ folder, incomingFile, onFileChange, visible, onComplete 
   const inputRef = useRef(null)
   const extension = file?.name?.split('.').pop()?.toLowerCase()
   const isVideo = ['mov', 'mp4', 'm4v'].includes(extension)
-  const outputs = !file ? [] : ['heic', 'heif'].includes(extension) ? ['PNG', 'JPG'] : ['jpg', 'jpeg'].includes(extension) ? ['PNG', 'HEIC'] : extension === 'png' ? ['JPG', 'HEIC'] : extension === 'mov' ? ['MP4', 'M4A', 'MP3'] : ['MOV', 'M4A', 'MP3']
-  const receive = (nextFile) => { if (nextFile) { const nextExtension = nextFile.name.split('.').pop()?.toLowerCase(); const nextOutputs = ['heic', 'heif'].includes(nextExtension) ? ['PNG', 'JPG'] : ['jpg', 'jpeg'].includes(nextExtension) ? ['PNG', 'HEIC'] : nextExtension === 'png' ? ['JPG', 'HEIC'] : nextExtension === 'mov' ? ['MP4', 'M4A', 'MP3'] : ['MOV', 'M4A', 'MP3']; setFile(nextFile); onFileChange(true); setFormat(nextOutputs[0]); setStatus('') } }
+  const outputs = !file ? [] : ['heic', 'heif'].includes(extension) ? ['PNG', 'JPG'] : ['jpg', 'jpeg'].includes(extension) ? ['PNG', 'HEIC'] : extension === 'png' ? ['JPG', 'HEIC'] : extension === 'mov' ? ['MP4', 'GIF', 'M4A', 'MP3'] : ['MOV', 'GIF', 'M4A', 'MP3']
+  const receive = (nextFile) => { if (nextFile) { const nextExtension = nextFile.name.split('.').pop()?.toLowerCase(); const nextOutputs = ['heic', 'heif'].includes(nextExtension) ? ['PNG', 'JPG'] : ['jpg', 'jpeg'].includes(nextExtension) ? ['PNG', 'HEIC'] : nextExtension === 'png' ? ['JPG', 'HEIC'] : nextExtension === 'mov' ? ['MP4', 'GIF', 'M4A', 'MP3'] : ['MOV', 'GIF', 'M4A', 'MP3']; setFile(nextFile); onFileChange(true); setFormat(nextOutputs[0]); setStatus('') } }
   useEffect(() => { if (incomingFile) receive(incomingFile) }, [incomingFile])
   const convert = async () => {
     if (!file) return

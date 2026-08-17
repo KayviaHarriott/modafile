@@ -49,6 +49,7 @@
     "icon": ["icons/kilofile.icns"],
     "category": "Productivity",
     "shortDescription": "Private PDF compression that preserves interactions.",
+    "resources": ["resources/gif-exporter"],
     "macOS": {
       "minimumSystemVersion": "12.0"
     }

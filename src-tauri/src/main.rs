@@ -150,6 +150,25 @@ fn next_converted_path(folder: &PathBuf, name: &str, extension: &str) -> PathBuf
     }
 }
 
+#[cfg(debug_assertions)]
+fn gif_exporter_path(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/gif-exporter"))
+}
+
+#[cfg(not(debug_assertions))]
+fn gif_exporter_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path().resource_dir().map(|path| path.join("resources/gif-exporter")).map_err(|error| error.to_string())
+}
+
+fn convert_video_to_gif(app: &tauri::AppHandle, input: PathBuf, folder: PathBuf) -> Result<String, String> {
+    let name = input.file_stem().and_then(|name| name.to_str()).unwrap_or("converted");
+    let output = next_converted_path(&folder, name, "gif");
+    let exporter = gif_exporter_path(app)?;
+    let result = Command::new(exporter).arg(&input).arg(&output).output().map_err(|error| error.to_string())?;
+    if !result.status.success() { return Err(String::from_utf8_lossy(&result.stderr).trim().to_string()); }
+    Ok(output.to_string_lossy().into_owned())
+}
+
 fn convert_media(input: PathBuf, folder: PathBuf, format: String) -> Result<String, String> {
     let format = format.to_lowercase();
     let name = input.file_stem().and_then(|name| name.to_str()).unwrap_or("converted");
@@ -180,19 +199,19 @@ fn convert_media(input: PathBuf, folder: PathBuf, format: String) -> Result<Stri
 }
 
 #[tauri::command]
-fn convert_file(input_path: String, folder: String, format: String) -> Result<String, String> {
+fn convert_file(app: tauri::AppHandle, input_path: String, folder: String, format: String) -> Result<String, String> {
     let input = PathBuf::from(input_path);
     let extension = input.extension().and_then(|value| value.to_str()).unwrap_or("").to_lowercase();
-    if ["mov", "mp4", "m4v"].contains(&extension.as_str()) { convert_media(input, PathBuf::from(folder), format) } else { convert_with_sips(input, PathBuf::from(folder), format) }
+    if format.eq_ignore_ascii_case("gif") { convert_video_to_gif(&app, input, PathBuf::from(folder)) } else if ["mov", "mp4", "m4v"].contains(&extension.as_str()) { convert_media(input, PathBuf::from(folder), format) } else { convert_with_sips(input, PathBuf::from(folder), format) }
 }
 
 #[tauri::command]
-fn convert_uploaded_file(filename: String, bytes: Vec<u8>, folder: String, format: String) -> Result<String, String> {
+fn convert_uploaded_file(app: tauri::AppHandle, filename: String, bytes: Vec<u8>, folder: String, format: String) -> Result<String, String> {
     let unique = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|error| error.to_string())?.as_nanos();
     let source = std::env::temp_dir().join(format!("pdf-squeeze-{}-{}", unique, filename));
     std::fs::write(&source, bytes).map_err(|error| error.to_string())?;
     let extension = source.extension().and_then(|value| value.to_str()).unwrap_or("").to_lowercase();
-    let result = if ["mov", "mp4", "m4v"].contains(&extension.as_str()) { convert_media(source.clone(), PathBuf::from(folder), format) } else { convert_with_sips(source.clone(), PathBuf::from(folder), format) };
+    let result = if format.eq_ignore_ascii_case("gif") { convert_video_to_gif(&app, source.clone(), PathBuf::from(folder)) } else if ["mov", "mp4", "m4v"].contains(&extension.as_str()) { convert_media(source.clone(), PathBuf::from(folder), format) } else { convert_with_sips(source.clone(), PathBuf::from(folder), format) };
     let _ = std::fs::remove_file(source);
     result
 }
