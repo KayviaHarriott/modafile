@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{path::PathBuf, process::Command, sync::Mutex, time::{SystemTime, UNIX_EPOCH}};
+use std::{fs::File, path::PathBuf, process::Command, sync::Mutex, time::{SystemTime, UNIX_EPOCH}};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::Serialize;
 use tauri::{LogicalSize, Manager, PhysicalPosition, Size};
@@ -125,6 +125,15 @@ fn pdf_output_is_compatible(app: &tauri::AppHandle, source: &PathBuf, output: &P
     Ok(status.success())
 }
 
+// This only recompresses the existing PDF object and content streams. It does
+// not redraw pages, rasterize text, or alter annotations and form objects.
+fn compress_pdf_objects(input: &PathBuf, output: &PathBuf) -> Result<(), String> {
+    let mut document = lopdf::Document::load(input).map_err(|error| error.to_string())?;
+    document.compress();
+    let mut file = File::create(output).map_err(|error| error.to_string())?;
+    document.save_modern(&mut file).map_err(|error| error.to_string())
+}
+
 fn compress_pdf_document(app: &tauri::AppHandle, input_path: String, folder: String, target_mb: Option<f64>, preserve_metadata: bool) -> Result<CompressionResult, String> {
     let input = PathBuf::from(input_path);
     let original_size = std::fs::metadata(&input).map_err(|error| error.to_string())?.len();
@@ -157,11 +166,19 @@ fn compress_pdf_document(app: &tauri::AppHandle, input_path: String, folder: Str
         let _ = std::fs::remove_file(&temporary);
         run_ghostscript(&input, &temporary, dpi, preserve_metadata)?;
         if !pdf_output_is_compatible(app, &input, &temporary)? {
-            // A rasterized substitute appears correct but destroys selectable text,
-            // search, reading order, links, and forms. Never trade those away.
+            // Ghostscript can change font mappings on some web-exported PDFs.
+            // Recompress the original streams instead, retaining PDF semantics.
             let _ = std::fs::remove_file(&temporary);
-            std::fs::copy(&input, &output).map_err(|error| error.to_string())?;
-            (original_size, true)
+            compress_pdf_objects(&input, &temporary)?;
+            let safe_size = std::fs::metadata(&temporary).map_err(|error| error.to_string())?.len();
+            if safe_size < original_size && pdf_output_is_compatible(app, &input, &temporary)? {
+                std::fs::rename(&temporary, &output).map_err(|error| error.to_string())?;
+                (safe_size, false)
+            } else {
+                let _ = std::fs::remove_file(&temporary);
+                std::fs::copy(&input, &output).map_err(|error| error.to_string())?;
+                (original_size, true)
+            }
         } else {
             let final_size = std::fs::metadata(&temporary).map_err(|error| error.to_string())?.len();
             std::fs::rename(&temporary, &output).map_err(|error| error.to_string())?;
