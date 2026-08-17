@@ -15,7 +15,7 @@ async function compressPdfSafely(file, folder) {
   const source = fromBase64(await invoke('read_file', { path: file.path }))
   const runner = await createQpdfRunner({ ...qpdfAssets, timeoutMs: 120000 })
   try {
-    const output = await runner.runOne({ input: source, inputName: 'input.pdf', outputName: 'output.pdf', args: ['--compress-streams=y', '--decode-level=generalized', '--recompress-flate', '--compression-level=9', '--optimize-images', '--jpeg-quality=55', '--object-streams=generate', '--', 'input.pdf', 'output.pdf'] })
+    const output = await runner.runOne({ input: source, inputName: 'input.pdf', outputName: 'output.pdf', args: ['--compress-streams=y', '--decode-level=generalized', '--recompress-flate', '--compression-level=9', '--object-streams=generate', '--', 'input.pdf', 'output.pdf'] })
     const filename = `${file.name.replace(/\.pdf$/i, '')}-compressed.pdf`
     const path = await invoke('save_pdf', { folder, filename, bytes: Array.from(output) })
     return { path, originalSize: source.byteLength, outputSize: output.byteLength, targetMet: true }
