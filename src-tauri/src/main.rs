@@ -89,7 +89,19 @@ fn run_ghostscript(input: &PathBuf, output: &PathBuf, dpi: u32, preserve_metadat
     if !result.status.success() {
         return Err(String::from_utf8_lossy(&result.stderr).trim().to_string());
     }
+    let output_size = std::fs::metadata(output).map_err(|error| error.to_string())?.len();
+    if output_size == 0 {
+        return Err("PDF compression produced an empty temporary file; the original was left untouched.".into());
+    }
     Ok(())
+}
+
+struct TemporaryFile(PathBuf);
+
+impl Drop for TemporaryFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
 }
 
 fn compress_pdf_document(input_path: String, folder: String, target_mb: Option<f64>, preserve_metadata: bool) -> Result<CompressionResult, String> {
@@ -102,6 +114,8 @@ fn compress_pdf_document(input_path: String, folder: String, target_mb: Option<f
     // Smallest mode evaluates every level and retains the smallest actual file.
     let resolutions: &[u32] = if limit.is_some() { &[170, 140, 110, 90, 72, 60, 48] } else { &[144, 110, 90, 72, 60, 48] };
     let temporary = output_folder.join(format!(".{}.kilofile-working.pdf", input.file_stem().and_then(|name| name.to_str()).unwrap_or("document")));
+    let _temporary_cleanup = TemporaryFile(temporary.clone());
+    let _ = std::fs::remove_file(&temporary);
     // A source PDF that already meets the target is the best possible result: do
     // not recompress it into a larger file simply because a target was selected.
     if limit.is_some_and(|maximum| original_size <= maximum) {
