@@ -313,6 +313,23 @@ fn resize_window(app: tauri::AppHandle, width: f64, height: Option<f64>) -> Resu
 }
 
 #[tauri::command]
+fn set_bubble_layout(app: tauri::AppHandle, expanded: bool, panel_open: bool) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or("Main window not found")?;
+    let (width, height) = if panel_open { (820.0, 700.0) } else if expanded { (216.0, 344.0) } else { (96.0, 96.0) };
+    window.set_size(Size::Logical(LogicalSize::new(width, height))).map_err(|error| error.to_string())?;
+    let monitor = window.current_monitor().map_err(|error| error.to_string())?
+        .or(window.primary_monitor().map_err(|error| error.to_string())?)
+        .ok_or("No monitor found")?;
+    let origin = monitor.position();
+    let screen = monitor.size();
+    let window_size = window.outer_size().map_err(|error| error.to_string())?;
+    let x = origin.x + 22;
+    let y = origin.y + screen.height as i32 - window_size.height as i32 - 22;
+    window.set_position(PhysicalPosition::new(x, y)).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 fn default_output_folder() -> String {
     std::env::var_os("HOME").map(PathBuf::from).map(|home| home.join("Downloads")).unwrap_or_else(|| PathBuf::from("Downloads")).to_string_lossy().into_owned()
 }
@@ -443,7 +460,7 @@ fn main() {
             *app.state::<AppState>().tray.lock().map_err(|_| "Tray state is unavailable")? = Some(tray);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![choose_output_folder, save_pdf, read_file, compress_pdf, convert_file, convert_uploaded_file, resize_pill, resize_window, default_output_folder, start_window_dragging, set_always_on_top, minimize_window, close_window, focus_window, reveal_in_finder, show_completion_notification, set_launch_at_login, set_navbar_mode])
+        .invoke_handler(tauri::generate_handler![choose_output_folder, save_pdf, read_file, compress_pdf, convert_file, convert_uploaded_file, resize_pill, resize_window, set_bubble_layout, default_output_folder, start_window_dragging, set_always_on_top, minimize_window, close_window, focus_window, reveal_in_finder, show_completion_notification, set_launch_at_login, set_navbar_mode])
         .run(tauri::generate_context!())
         .expect("error while running Modafile")
 }
