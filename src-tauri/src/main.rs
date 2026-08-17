@@ -185,10 +185,13 @@ fn convert_media(input: PathBuf, folder: PathBuf, format: String) -> Result<Stri
             .output().map_err(|error| error.to_string())?;
         if !exported.status.success() { return Err(String::from_utf8_lossy(&exported.stderr).trim().to_string()); }
         let encoded = Command::new("/usr/bin/afconvert")
-            .args(["-f", "MPG3", "-d", ".mp3"]).arg(&temporary).args(["-o"]).arg(&output)
+            .args(["-f", "MPG3", "-d", ".mp3"]).arg(&temporary).arg(&output)
             .output().map_err(|error| error.to_string())?;
         let _ = std::fs::remove_file(temporary);
-        if !encoded.status.success() { return Err(String::from_utf8_lossy(&encoded.stderr).trim().to_string()); }
+        if !encoded.status.success() {
+            let detail = String::from_utf8_lossy(&encoded.stderr).trim().to_string();
+            return Err(if detail.is_empty() { format!("macOS could not encode this audio track as MP3 ({}).", encoded.status) } else { detail });
+        }
     } else {
         let result = Command::new("/usr/bin/avconvert")
             .args(["--source"]).arg(&input).args(["--preset", preset, "--output"]).arg(&output).arg("--replace")
