@@ -188,9 +188,11 @@ fn compress_image(input_path: String, folder: String, target_mb: Option<f64>) ->
 }
 
 #[tauri::command]
-fn compress_pdf(input_path: String, folder: String, target_mb: Option<f64>, preserve_metadata: bool) -> Result<CompressionResult, String> {
-    let extension = PathBuf::from(&input_path).extension().and_then(|value| value.to_str()).unwrap_or("").to_lowercase();
-    if extension == "pdf" { compress_pdf_document(input_path, folder, target_mb, preserve_metadata) } else { compress_image(input_path, folder, target_mb) }
+async fn compress_pdf(input_path: String, folder: String, target_mb: Option<f64>, preserve_metadata: bool) -> Result<CompressionResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let extension = PathBuf::from(&input_path).extension().and_then(|value| value.to_str()).unwrap_or("").to_lowercase();
+        if extension == "pdf" { compress_pdf_document(input_path, folder, target_mb, preserve_metadata) } else { compress_image(input_path, folder, target_mb) }
+    }).await.map_err(|error| error.to_string())?
 }
 
 fn convert_with_sips(input: PathBuf, folder: PathBuf, format: String) -> Result<String, String> {
@@ -277,10 +279,12 @@ fn convert_media(input: PathBuf, folder: PathBuf, format: String) -> Result<Stri
 }
 
 #[tauri::command]
-fn convert_file(app: tauri::AppHandle, input_path: String, folder: String, format: String) -> Result<String, String> {
-    let input = PathBuf::from(input_path);
-    let extension = input.extension().and_then(|value| value.to_str()).unwrap_or("").to_lowercase();
-    if format.eq_ignore_ascii_case("gif") { convert_video_to_gif(&app, input, PathBuf::from(folder)) } else if ["mov", "mp4", "m4v"].contains(&extension.as_str()) { convert_media(input, PathBuf::from(folder), format) } else { convert_with_sips(input, PathBuf::from(folder), format) }
+async fn convert_file(app: tauri::AppHandle, input_path: String, folder: String, format: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let input = PathBuf::from(input_path);
+        let extension = input.extension().and_then(|value| value.to_str()).unwrap_or("").to_lowercase();
+        if format.eq_ignore_ascii_case("gif") { convert_video_to_gif(&app, input, PathBuf::from(folder)) } else if ["mov", "mp4", "m4v"].contains(&extension.as_str()) { convert_media(input, PathBuf::from(folder), format) } else { convert_with_sips(input, PathBuf::from(folder), format) }
+    }).await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
