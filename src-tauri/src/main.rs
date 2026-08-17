@@ -99,22 +99,42 @@ fn compress_pdf(input_path: String, folder: String, target_mb: Option<f64>, pres
     let output_folder = PathBuf::from(folder);
     let output = next_compressed_path(&input, &output_folder);
     let limit = target_mb.filter(|value| *value > 0.0).map(|value| (value * 1024.0 * 1024.0) as u64);
-    let resolutions: &[u32] = if limit.is_some() { &[170, 140, 110, 90, 72, 60, 48] } else { &[72, 60, 48] };
+    // Target mode favours the first (highest-quality) result that fits the target.
+    // Smallest mode evaluates every level and retains the smallest actual file.
+    let resolutions: &[u32] = if limit.is_some() { &[170, 140, 110, 90, 72, 60, 48] } else { &[144, 110, 90, 72, 60, 48] };
     let temporary = output_folder.join(format!(".{}.kilofile-working.pdf", input.file_stem().and_then(|name| name.to_str()).unwrap_or("document")));
-    let mut chosen = None;
+    // A source PDF that already meets the target is the best possible result: do
+    // not recompress it into a larger file simply because a target was selected.
+    if limit.is_some_and(|maximum| original_size <= maximum) {
+        std::fs::copy(&input, &output).map_err(|error| error.to_string())?;
+        return Ok(CompressionResult { path: output.to_string_lossy().into_owned(), target_met: true, original_size, output_size: original_size });
+    }
+
+    let mut best: Option<(u32, u64)> = None;
     for dpi in resolutions {
         let _ = std::fs::remove_file(&temporary);
         run_ghostscript(&input, &temporary, *dpi, preserve_metadata)?;
         let size = std::fs::metadata(&temporary).map_err(|error| error.to_string())?.len();
-        chosen = Some(size);
-        if limit.is_none_or(|maximum| size <= maximum) { break; }
+        if best.is_none_or(|(_, smallest)| size < smallest) { best = Some((*dpi, size)); }
+        if limit.is_some_and(|maximum| size <= maximum) { break; }
     }
-    std::fs::rename(&temporary, &output).map_err(|error| error.to_string())?;
+    let (dpi, compressed_size) = best.ok_or("No PDF compression result was produced")?;
+    let output_size = if compressed_size < original_size {
+        let _ = std::fs::remove_file(&temporary);
+        run_ghostscript(&input, &temporary, dpi, preserve_metadata)?;
+        std::fs::rename(&temporary, &output).map_err(|error| error.to_string())?;
+        compressed_size
+    } else {
+        // Never advertise a larger re-encoded PDF as a compressed result.
+        let _ = std::fs::remove_file(&temporary);
+        std::fs::copy(&input, &output).map_err(|error| error.to_string())?;
+        original_size
+    };
     Ok(CompressionResult {
         path: output.to_string_lossy().into_owned(),
-        target_met: limit.is_none_or(|maximum| chosen.unwrap_or(u64::MAX) <= maximum),
+        target_met: limit.is_none_or(|maximum| output_size <= maximum),
         original_size,
-        output_size: chosen.unwrap_or(0),
+        output_size,
     })
 }
 
