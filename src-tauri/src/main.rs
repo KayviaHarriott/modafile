@@ -123,7 +123,12 @@ fn reencode_jpx_images(input: &PathBuf, output: &PathBuf, quality: u8) -> Result
         if jpeg.len() >= stream.content.len() { continue; }
         stream.content = jpeg;
         stream.dict.set("Filter", lopdf::Object::Name(b"DCTDecode".to_vec()));
+        // sips writes standard 8-bit RGB JPEG data; retaining the source
+        // JPEG-2000 colour profile or decode array corrupts the display.
+        stream.dict.set("ColorSpace", lopdf::Object::Name(b"DeviceRGB".to_vec()));
+        stream.dict.set("BitsPerComponent", lopdf::Object::Integer(8));
         stream.dict.remove(b"DecodeParms");
+        stream.dict.remove(b"Decode");
         changed += 1;
     }
 
