@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{path::PathBuf, process::Command, sync::Mutex, time::{SystemTime, UNIX_EPOCH}};
+use std::{fs::File, path::PathBuf, process::Command, sync::Mutex, time::{SystemTime, UNIX_EPOCH}};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::Serialize;
 use tauri::{LogicalSize, Manager, PhysicalPosition, Size};
@@ -92,6 +92,47 @@ fn run_ghostscript(input: &PathBuf, output: &PathBuf, dpi: u32, preserve_metadat
     Ok(())
 }
 
+// Re-encodes JPEG-2000 image objects in-place, leaving text, annotations,
+// links, forms, page geometry, and the original PDF content streams untouched.
+fn reencode_jpx_images(input: &PathBuf, output: &PathBuf, quality: u8) -> Result<(), String> {
+    let mut document = lopdf::Document::load(input).map_err(|error| error.to_string())?;
+    let folder = output.parent().ok_or("Output folder is unavailable")?;
+    let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|error| error.to_string())?.as_nanos();
+    let mut changed = 0usize;
+
+    for object in document.objects.values_mut() {
+        let lopdf::Object::Stream(stream) = object else { continue };
+        let is_image = stream.dict.get(b"Subtype").ok().is_some_and(|value| matches!(value, lopdf::Object::Name(name) if name == b"Image"));
+        let is_jpx = stream.dict.get(b"Filter").ok().is_some_and(|value| matches!(value, lopdf::Object::Name(name) if name == b"JPXDecode"));
+        if !is_image || !is_jpx || stream.content.is_empty() { continue; }
+
+        let source = folder.join(format!(".modafile-{stamp}-{changed}.jp2"));
+        let converted = folder.join(format!(".modafile-{stamp}-{changed}.jpg"));
+        let result = (|| -> Result<Vec<u8>, String> {
+            std::fs::write(&source, &stream.content).map_err(|error| error.to_string())?;
+            let status = Command::new("/usr/bin/sips")
+                .args(["-s", "format", "jpeg", "-s", "formatOptions", &quality.to_string()])
+                .arg(&source).arg("--out").arg(&converted)
+                .output().map_err(|error| error.to_string())?;
+            if !status.status.success() { return Err(String::from_utf8_lossy(&status.stderr).trim().to_string()); }
+            std::fs::read(&converted).map_err(|error| error.to_string())
+        })();
+        let _ = std::fs::remove_file(&source);
+        let _ = std::fs::remove_file(&converted);
+        let jpeg = result?;
+        if jpeg.len() >= stream.content.len() { continue; }
+        stream.content = jpeg;
+        stream.dict.set("Filter", lopdf::Object::Name(b"DCTDecode".to_vec()));
+        stream.dict.remove(b"DecodeParms");
+        changed += 1;
+    }
+
+    if changed == 0 { return Err("This PDF has no JPEG-2000 images that can be reduced safely.".into()); }
+    document.compress();
+    let mut file = File::create(output).map_err(|error| error.to_string())?;
+    document.save_modern(&mut file).map_err(|error| error.to_string())
+}
+
 fn compress_pdf_document(input_path: String, folder: String, target_mb: Option<f64>, preserve_metadata: bool) -> Result<CompressionResult, String> {
     let input = PathBuf::from(input_path);
     let original_size = std::fs::metadata(&input).map_err(|error| error.to_string())?.len();
@@ -121,8 +162,16 @@ fn compress_pdf_document(input_path: String, folder: String, target_mb: Option<f
     let output_size = if compressed_size < original_size {
         let _ = std::fs::remove_file(&temporary);
         run_ghostscript(&input, &temporary, dpi, preserve_metadata)?;
+        // A few web-exported PDFs use font encodings that macOS Preview does
+        // not reliably render after Ghostscript rewrites them. Prefer reducing
+        // their embedded JPEG-2000 images without touching page text or layout.
+        let _ = std::fs::remove_file(&temporary);
+        if reencode_jpx_images(&input, &temporary, 40).is_err() {
+            run_ghostscript(&input, &temporary, dpi, preserve_metadata)?;
+        }
+        let final_size = std::fs::metadata(&temporary).map_err(|error| error.to_string())?.len();
         std::fs::rename(&temporary, &output).map_err(|error| error.to_string())?;
-        compressed_size
+        final_size
     } else {
         // Never advertise a larger re-encoded PDF as a compressed result.
         let _ = std::fs::remove_file(&temporary);
