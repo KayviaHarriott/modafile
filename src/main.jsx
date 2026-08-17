@@ -75,7 +75,7 @@ function App() {
     if (isTauri()) invoke('set_always_on_top', { enabled: alwaysOnTop }).catch(console.error)
   }, [alwaysOnTop])
   const resize = async (width, height = 520) => { if (isTauri()) await invoke('resize_window', { width, height }) }
-  const setPillSize = async (next) => { if (panel || navbarMode) return; setExpanded(next); await resize(next ? 200 : 128) }
+  const setPillSize = async (next) => { if (panel || navbarMode) return; setExpanded(next); await resize(next ? 216 : 128) }
   const showPanel = async (nextPanel) => { setPanel(nextPanel); setExpanded(true); await resize(navbarMode ? 560 : 820, 700) }
   const closePanel = async () => { setPanel(null); setExpanded(false); await resize(navbarMode ? 560 : 128) }
   const cancelPanelClose = () => { if (panelTimer.current) window.clearTimeout(panelTimer.current) }
