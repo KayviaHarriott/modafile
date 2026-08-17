@@ -1,4 +1,6 @@
-# KiloFile
+# Modafile
+
+![Modafile app preview](assets/modafile-preview.png)
 
 A lightweight native macOS utility for PDF compression and file conversion. PDF optimization keeps interactive content such as links, form fields, selectable text, and vector graphics intact.
 
@@ -18,7 +20,7 @@ Build the standalone, fixed-size macOS app with:
 npm run app:build
 ```
 
-The finished app is written to `standalone/KiloFile.app`.
+The finished app is written to `standalone/Modafile.app`.
 
 Then open the local address shown in Terminal. Files are processed entirely in the browser and are never uploaded.
 
@@ -30,4 +32,12 @@ npm run build
 
 ## Compression scope
 
-This app consolidates and serializes PDF objects into compressed object streams. That is safe for interactive PDFs, but already optimized or image-heavy PDFs may not become smaller. In that case, the original bytes are returned instead of a larger file.
+PDF compression uses a local Ghostscript installation to reduce embedded image sizes while retaining PDF annotations such as links.
+
+## macOS downloads
+
+Create a drag-and-drop installer disk image with `npm run app:dmg`. The result is `standalone/Modafile.dmg`.
+
+Create a package installer with `npm run app:pkg`. The result is `standalone/Modafile.pkg` and installs Modafile in `/Applications`.
+
+These builds are ad-hoc signed for local use. To distribute without Gatekeeper warnings, sign with an Apple Developer ID Application certificate and notarize the DMG or PKG with Apple.

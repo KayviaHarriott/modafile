@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "KiloFile",
+  "productName": "Modafile",
   "version": "1.0.0",
-  "identifier": "com.kayviaharriott.kilofile",
+  "identifier": "com.modafile.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://127.0.0.1:5173",
@@ -14,19 +14,19 @@
     "windows": [
       {
         "label": "main",
-        "title": "KiloFile",
+        "title": "Modafile",
         "width": 128,
         "height": 520,
         "minWidth": 128,
         "minHeight": 520,
         "maxWidth": 820,
-        "maxHeight": 520,
+        "maxHeight": 700,
         "resizable": false,
         "fullscreen": false,
         "center": false,
         "x": 20,
         "y": 180,
-        "decorations": true,
+        "decorations": false,
         "transparent": true,
         "shadow": false,
         "dragDropEnabled": true,

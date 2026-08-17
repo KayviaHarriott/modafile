@@ -10,11 +10,12 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "app:dev": "tauri dev",
-    "app:build": "sh scripts/build-mac-app.sh"
+    "app:build": "sh scripts/build-mac-app.sh",
+    "app:dmg": "KILOFILE_BUNDLES=app,dmg sh scripts/build-mac-app.sh",
+    "app:pkg": "sh scripts/build-mac-pkg.sh"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "pdf-lib": "latest",
     "react": "latest",
     "react-dom": "latest",
     "vite": "latest"
