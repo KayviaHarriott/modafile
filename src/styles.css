@@ -72,5 +72,31 @@
 .panel::-webkit-scrollbar-thumb:hover { background-color:#ffffff70; }
 .canvas.light .panel::-webkit-scrollbar-thumb { background-color:#1d1d242e; }
 .canvas.light .panel::-webkit-scrollbar-thumb:hover { background-color:#1d1d2450; }
+
+/* Convert uses the same readable visual system as the Compress workspace. */
+.convert-panel { padding:28px 36px 24px; background:rgba(20,20,21,.98); }
+.convert-header h1 { margin:0; color:#fff; font-size:27px; line-height:1.2; letter-spacing:-.045em; }
+.convert-header p { display:block; max-width:600px; margin:6px 0 0; color:#a9a9ae; font-size:16px; line-height:1.35; }
+.convert-panel .compress-rule { margin:22px 0 24px; }
+.convert-panel .drop-zone.compact { height:150px; border:2px dashed #ffffff56; border-radius:13px; background:linear-gradient(135deg,#ffffff09,#ffffff03); }
+.convert-panel .drop-zone.compact:hover { border-color:#ffffff9c; background:#ffffff10; }
+.convert-panel .drop-zone.compact span { font-size:17px; }
+.convert-panel .drop-zone.compact small { font-size:13px; }
+.convert-panel .conversion-options { margin-top:22px; }
+.convert-panel .options-label { margin-bottom:10px; color:#eeeeef; font-size:14px; letter-spacing:0; text-transform:none; }
+.convert-panel .format-row { gap:10px; }
+.convert-panel .format-row button { min-height:40px; min-width:70px; padding:0 16px; border-radius:10px; font-size:14px; }
+.convert-panel .format-row button.selected { border-color:#ffffff70; color:#121214; background:#f2f2f4; }
+.convert-panel .supported-note { gap:5px; margin-top:14px; font-size:13px; }
+.convert-panel .supported-note strong { font-size:13px; }
+.convert-panel .convert-action { height:42px; margin-top:20px; border-radius:11px; font-size:15px; }
+.canvas.light .convert-panel { background:#fbfbfc; box-shadow:0 12px 32px #1111111f; }
+.canvas.light .convert-header h1 { color:#141416; }
+.canvas.light .convert-header p, .canvas.light .convert-panel .supported-note { color:#727278; }
+.canvas.light .convert-panel .drop-zone.compact { border-color:#1c1c1c3e; background:#fff; }
+.canvas.light .convert-panel .drop-zone.compact:hover { border-color:#1c1c1c78; background:#fafafa; }
+.canvas.light .convert-panel .options-label { color:#141416; }
+.canvas.light .convert-panel .format-row button { border-color:#20202422; color:#232326; background:#fff; }
+.canvas.light .convert-panel .format-row button.selected { border-color:#242428; color:#fff; background:#202024; }
 .toggle-switch { position:relative; display:block; padding:0; border:0; border-radius:999px; background:#626262; cursor:pointer; transition:background 160ms ease; }.toggle-switch i { position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%; background:#fff; box-shadow:0 1px 3px #00000050; transition:transform 160ms ease; }.toggle-switch.is-on { background:#fff; }.toggle-switch.is-on i { transform:translateX(18px); background:#191919; }.toggle-switch:focus-visible { outline:2px solid #fff; outline-offset:2px; }
 .settings-heading { display:flex; align-items:center; justify-content:space-between; }.theme-toggle { width:34px; height:34px; border:1px solid #ffffff24; border-radius:50%; color:#fff; background:#ffffff0d; cursor:pointer; font-size:17px; }.control.drag-target { color:#fff; background:#ffffff22; box-shadow:inset 0 0 0 1px #ffffff55, 0 0 18px #ffffff20; }.canvas.light { color:#222; }.canvas.light .pill, .canvas.light .panel { border-color:#00000012; background:rgba(244,246,248,.94); box-shadow:0 10px 28px #00000022; }.canvas.light .control, .canvas.light .panel h1, .canvas.light .panel p, .canvas.light .mode-toggle, .canvas.light .location-path { color:#202124; }.canvas.light .control:hover, .canvas.light .control.drag-target { color:#111; background:#0000000c; }.canvas.light .drop-zone, .canvas.light .goal-row button, .canvas.light .completed-file, .canvas.light .compression-options, .canvas.light .mode-toggle, .canvas.light .save-location { border-color:#00000018; background:#00000006; color:#202124; }.canvas.light .theme-toggle { border-color:#00000018; color:#222; background:#00000008; }.canvas.light .options-label, .canvas.light .drop-zone small, .canvas.light .completed-file small, .canvas.light .empty-completed { color:#6c7077; }.canvas.light .completion-dot { border-color:#f4f6f8; }
