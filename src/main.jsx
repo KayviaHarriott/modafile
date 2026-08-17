@@ -2,12 +2,25 @@ import React, { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { createQpdfRunner } from 'qpdf-run'
 import './styles.css'
 import compressIcon from './assets/compress.png'
 import convertIcon from './assets/convert.png'
 import settingsIcon from './assets/settings.png'
 
 const isTauri = () => '__TAURI_INTERNALS__' in window
+const qpdfAssets = { workerUrl: new URL('qpdf-run/worker', import.meta.url).href, qpdfJsUrl: new URL('qpdf-run/qpdf.js', import.meta.url).href, wasmUrl: new URL('qpdf-run/qpdf.wasm', import.meta.url).href }
+const fromBase64 = (value) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0))
+async function compressPdfSafely(file, folder) {
+  const source = fromBase64(await invoke('read_file', { path: file.path }))
+  const runner = await createQpdfRunner({ ...qpdfAssets, timeoutMs: 120000 })
+  try {
+    const output = await runner.runOne({ input: source, inputName: 'input.pdf', outputName: 'output.pdf', args: ['--compress-streams=y', '--decode-level=generalized', '--recompress-flate', '--compression-level=9', '--optimize-images', '--jpeg-quality=55', '--object-streams=generate', '--', 'input.pdf', 'output.pdf'] })
+    const filename = `${file.name.replace(/\.pdf$/i, '')}-compressed.pdf`
+    const path = await invoke('save_pdf', { folder, filename, bytes: Array.from(output) })
+    return { path, originalSize: source.byteLength, outputSize: output.byteLength, targetMet: true }
+  } finally { await runner.destroy() }
+}
 const controls = [{ label: 'Compress', icon: compressIcon, panel: 'compress' }, { label: 'Convert', icon: convertIcon, panel: 'convert' }]
 function Control({ label, icon, onClick, onMouseEnter, onMouseLeave, completed = false, dragActive = false, variant = '', controlRef }) { return <button ref={controlRef} className={`control ${variant} ${dragActive ? 'drag-target' : ''}`} type="button" aria-label={label} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} onClick={onClick}><span className="icon"><img src={icon} alt="" />{completed && <i className="completion-dot" />}</span><span className="label">{label}</span></button> }
 function DropPanel({ folder, incomingFile, visible, autoCompress, preserveMetadata, onComplete }) {
@@ -32,7 +45,7 @@ function DropPanel({ folder, incomingFile, visible, autoCompress, preserveMetada
     const progressTimer = window.setInterval(() => setProgress((value) => Math.min(value + 11, 88)), 220)
     try {
       if (!isTauri() || !file.path) throw new Error('Please use the Modafile macOS app to compress files.')
-      const result = await invoke('compress_pdf', { inputPath: file.path, folder, targetMb: goal === 'target' ? Number(targetMb) : null, preserveMetadata })
+      const result = file.name.toLowerCase().endsWith('.pdf') ? await compressPdfSafely(file, folder) : await invoke('compress_pdf', { inputPath: file.path, folder, targetMb: goal === 'target' ? Number(targetMb) : null, preserveMetadata })
       setStatus(result.targetMet ? `Saved: ${result.path}` : `Saved smallest version: ${result.path}`)
       setProgress(100)
       setCompletedFiles((items) => [{ path: result.path, name: result.path.split('/').pop(), originalSize: result.originalSize, outputSize: result.outputSize }, ...items].slice(0, 3))

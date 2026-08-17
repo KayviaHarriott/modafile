@@ -23,7 +23,16 @@ async fn choose_output_folder(app: tauri::AppHandle) -> Option<String> {
 
 #[tauri::command]
 fn save_pdf(folder: String, filename: String, bytes: Vec<u8>) -> Result<String, String> {
-    let path = PathBuf::from(folder).join(filename);
+    let folder = PathBuf::from(folder);
+    let requested = folder.join(&filename);
+    let stem = requested.file_stem().and_then(|value| value.to_str()).unwrap_or("document");
+    let extension = requested.extension().and_then(|value| value.to_str()).unwrap_or("pdf");
+    let mut path = requested.clone();
+    let mut number = 1;
+    while path.exists() {
+        path = folder.join(format!("{stem}-{number}.{extension}"));
+        number += 1;
+    }
     std::fs::write(&path, bytes).map_err(|error| error.to_string())?;
     Ok(path.to_string_lossy().into_owned())
 }

@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
+    "qpdf-run": "^0.2.1",
     "react": "latest",
     "react-dom": "latest",
     "vite": "latest"
